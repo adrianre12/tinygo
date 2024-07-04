@@ -75,7 +75,9 @@ const (
 	HID_ENDPOINT_OUT  = 5 // for Interrupt Out
 	MIDI_ENDPOINT_IN  = 6 // for Bulk In
 	MIDI_ENDPOINT_OUT = 7 // for Bulk Out
-	NumberOfEndpoints = 8
+	MSC_ENDPOINT_IN   = 8
+	MSC_ENDPOINT_OUT  = 9
+	NumberOfEndpoints = 10
 
 	// bmRequestType
 	REQUEST_HOSTTODEVICE = 0x00
