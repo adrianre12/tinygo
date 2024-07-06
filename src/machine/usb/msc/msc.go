@@ -18,7 +18,7 @@ const (
 	usb_GetMaxLun         = 0xFE
 )
 
-var MscInstance *msc
+var mscInstance *msc
 
 type msc struct {
 	buf       *RingBuffer
@@ -28,8 +28,8 @@ type msc struct {
 }
 
 func init() {
-	if MscInstance == nil {
-		MscInstance = newMsc()
+	if mscInstance == nil {
+		mscInstance = newMsc()
 	}
 }
 
@@ -59,11 +59,13 @@ func newMsc() *msc {
 			},
 		})
 
+	initStateMachine()
+
 	return m
 }
 
 func Port() *msc {
-	return MscInstance
+	return mscInstance
 }
 
 // SetRxHandler sets the handler function for incoming messages.
@@ -75,19 +77,6 @@ func (m *msc) SetRxHandler(rxHandler func([]byte)) {
 func (m *msc) SetTxHandler(txHandler func()) {
 	m.txHandler = txHandler
 }
-
-/*func (m *msc) Write(b []byte) (n int, err error) {
-	s, e := 0, 0
-	for s = 0; s < len(b); s += 4 {
-		e = s + 4
-		if e > len(b) {
-			e = len(b)
-		}
-
-		m.tx(b[s:e])
-	}
-	return e, nil
-}*/
 
 // sendUSBPacket sends a MSC Packet.
 func (m *msc) sendUSBPacket(b []byte) {
@@ -107,7 +96,7 @@ func (m *msc) TxHandler() {
 	}
 }
 
-func (m *msc) tx(b []byte) {
+func (m *msc) Tx(b []byte) {
 	if machine.USBDev.InitEndpointComplete {
 		if m.waitTxc {
 			m.buf.Put(b)
@@ -120,6 +109,7 @@ func (m *msc) tx(b []byte) {
 
 // from BulkOut
 func (m *msc) RxHandler(b []byte) {
+	recvChan <- b
 	if m.rxHandler != nil {
 		m.rxHandler(b)
 	}
