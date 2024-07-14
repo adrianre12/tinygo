@@ -1,6 +1,7 @@
 package msc
 
 import (
+	"fmt"
 	"machine"
 	"machine/usb"
 	"machine/usb/descriptor"
@@ -18,10 +19,15 @@ const (
 	usb_GetMaxLun         = 0xFE
 )
 
+var (
+	MaxLogicalBlocks uint32 = 0x00000800
+	BlockSize        uint32 = 0x00000200
+)
+
 var mscInstance *msc
 
 type msc struct {
-	buf       *RingBuffer
+	buf       *RingBufferMSC
 	rxHandler func([]byte)
 	txHandler func()
 	waitTxc   bool
@@ -83,7 +89,7 @@ func (m *msc) sendUSBPacket(b []byte) {
 	machine.SendUSBInPacket(usb.MSC_ENDPOINT_IN, b)
 }
 
-// from BulkIn
+// BulkIn
 func (m *msc) TxHandler() {
 	if m.txHandler != nil {
 		m.txHandler()
@@ -99,10 +105,14 @@ func (m *msc) TxHandler() {
 func (m *msc) Tx(b []byte) {
 	if machine.USBDev.InitEndpointComplete {
 		if m.waitTxc {
+			fmt.Println("Putting packet")
+
 			m.buf.Put(b)
+			fmt.Printf("Used %d\n", m.buf.Used())
 		} else {
 			m.waitTxc = true
 			m.sendUSBPacket(b)
+			fmt.Println("Sent packet")
 		}
 	}
 }

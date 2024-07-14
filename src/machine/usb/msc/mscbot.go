@@ -1,8 +1,10 @@
 package msc
 
 import (
+	"encoding/binary"
 	"fmt"
 	"sync"
+	"time"
 )
 
 var (
@@ -47,11 +49,11 @@ func botRoutine() {
 func botSM(buf []byte) {
 	switch currentState {
 	case StateCommand:
-		fmt.Printf("Cmd: buf=%v\n", buf)
+		fmt.Printf("Cmd: buf=% x\n", buf)
 		cbw := CBW{
-			DCBWSignature:          byteToUint32(buf[0:4]),
-			DCBWTag:                byteToUint32(buf[4:8]),
-			DCBWDataTransferLength: byteToUint32(buf[8:12]),
+			DCBWSignature:          binary.LittleEndian.Uint32(buf[0:4]),
+			DCBWTag:                binary.LittleEndian.Uint32(buf[4:8]),
+			DCBWDataTransferLength: binary.LittleEndian.Uint32(buf[8:12]),
 			BmCBWFlags:             buf[12],
 			BCBWLUN:                buf[13],
 			BCBWCBLength:           buf[14],
@@ -64,22 +66,6 @@ func botSM(buf []byte) {
 
 	case StateStatus:
 	}
-}
-
-func byteToUint32(b []byte) uint32 {
-	return uint32(b[3])<<24 | uint32(b[2])<<16 | uint32(b[1])<<8 | uint32(b[0])
-}
-
-func byteInsertUint16(b []byte, u uint16) {
-	b[0] = byte(u)
-	b[1] = byte(u >> 8)
-}
-
-func byteInsertUint32(b []byte, u uint32) {
-	b[0] = byte(u)
-	b[1] = byte(u >> 8)
-	b[2] = byte(u >> 16)
-	b[3] = byte(u >> 24)
 }
 
 type CBW struct {
@@ -101,22 +87,22 @@ type CBS struct {
 
 func (s *CBS) ToBytes() []byte {
 	b := make([]byte, 13)
-	byteInsertUint32(b[0:], s.DCBWSignature)
-	byteInsertUint32(b[4:], s.DCBWTag)
-	byteInsertUint32(b[8:], s.DCBWDataResidue)
+	binary.LittleEndian.PutUint32(b[0:], s.DCBWSignature)
+	binary.LittleEndian.PutUint32(b[4:], s.DCBWTag)
+	binary.LittleEndian.PutUint32(b[8:], s.DCBWDataResidue)
 	b[12] = s.BmCBWStatus
 
 	return b
 }
 
 const (
-	scsiInquiry       = 0x12
-	scsiRequestSense  = 0x03
-	scsiModeSense     = 0x1A
-	scsiTestUnitReady = 0x00
-	scsiReadCapacity  = 0x25
-	scsiRead10        = 0x28
-	scsiWrite10       = 0x2A
+	scsiInquiry        = 0x12
+	scsiRequestSense   = 0x03
+	scsiModeSense      = 0x1A
+	scsiTestUnitReady  = 0x00
+	scsiReadCapacity10 = 0x25
+	scsiRead10         = 0x28
+	scsiWrite10        = 0x2A
 
 	cswStatusPass       = 0x00
 	cswStatusFail       = 0x01
@@ -128,7 +114,7 @@ const (
 )
 
 func scsiCommands(cbw CBW) {
-
+	fmt.Printf("scsi Tag=%d CBWCB % x\n", cbw.DCBWTag, cbw.CBWCB)
 	cbs := CBS{
 		DCBWSignature:   0x53425355,
 		DCBWTag:         cbw.DCBWTag,
@@ -151,6 +137,21 @@ func scsiCommands(cbw CBW) {
 		fmt.Println("TestUnitReady")
 
 		cbs.BmCBWStatus = cmdTestUnitReady(cbw.CBWCB)
+
+	case scsiReadCapacity10:
+		fmt.Println("ReadCapacity10")
+
+		cbs.BmCBWStatus = cmdReadCapacity10(cbw.CBWCB)
+
+	case scsiModeSense:
+		fmt.Println("ModeSense")
+
+		cbs.BmCBWStatus = cmdModeSense(cbw.CBWCB)
+
+	case scsiRead10:
+		fmt.Println("Read10")
+
+		cbs.BmCBWStatus = cmdRead10(cbw.CBWCB)
 
 	default:
 		fmt.Printf("Unknown SCSI cmd 0x%X\n", cbw.CBWCB[0])
@@ -238,14 +239,14 @@ func (s *RequestSenseResponse) ToBytes() []byte {
 	b[0] = s.ErrorCode
 	b[1] = s.SegmentNumber
 	b[2] = s.Sensekey
-	byteInsertUint32(b[3:], s.Information)
+	binary.BigEndian.PutUint32(b[3:], s.Information)
 	b[7] = s.AditionalSenseLength
-	byteInsertUint32(b[8:], s.CommandSpecificInformation)
+	binary.BigEndian.PutUint32(b[8:], s.CommandSpecificInformation)
 	b[12] = s.AdditionalSenceCode
 	b[13] = s.AdditionalSenceCodeQualifier
 	b[14] = s.FieldReplaceableUnitCode
 	b[15] = s.Flags15
-	byteInsertUint16(b[16:], s.FieldPointer)
+	binary.BigEndian.PutUint16(b[16:], s.FieldPointer)
 
 	return b
 }
@@ -264,6 +265,7 @@ func cmdRequestSense(cb []byte) uint8 {
 		Sensekey:                     senseKey,
 		Information:                  0x00000000,
 		AditionalSenseLength:         0x0A,
+		CommandSpecificInformation:   0x00000000,
 		AdditionalSenceCode:          senseCode,
 		AdditionalSenceCodeQualifier: senseCodeQualifier,
 		FieldReplaceableUnitCode:     0x00,
@@ -280,5 +282,60 @@ func cmdTestUnitReady(cb []byte) uint8 {
 
 	// do some checks to see if it is ready
 
+	return cswStatusPass
+}
+
+type ReadCapacity10Respose struct {
+	ReturnedLogicalBlockAddress uint32
+	BlockLengthInBytes          uint32
+}
+
+func (s *ReadCapacity10Respose) ToBytes() []byte {
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint32(b[0:], s.ReturnedLogicalBlockAddress)
+	binary.BigEndian.PutUint32(b[4:], s.BlockLengthInBytes)
+
+	return b
+}
+
+func cmdReadCapacity10(cb []byte) uint8 {
+	currentState = StateSend
+	response := ReadCapacity10Respose{
+		ReturnedLogicalBlockAddress: MaxLogicalBlocks,
+		BlockLengthInBytes:          BlockSize,
+	}
+
+	Port().Tx(response.ToBytes())
+
+	return cswStatusPass
+}
+
+func cmdModeSense(cb []byte) uint8 {
+	currentState = StateSend
+	response := []byte{ // Hacky but this just says write protect off, no caching and no other data pages.
+		0x03,
+		0x00,
+		0x00,
+		0x00,
+	}
+	Port().Tx(response)
+
+	return cswStatusPass
+}
+
+func cmdRead10(cb []byte) uint8 {
+	currentState = StateSend
+	//flags1 := cb[1]
+	lba := binary.BigEndian.Uint32(cb[2:])
+	//grpNo := cb[6]
+	transLen := binary.BigEndian.Uint16(cb[7:])
+	//control := b[9]
+	fmt.Printf("lba=%d translen=%d\n", lba, transLen)
+	for i := range transLen * 8 {
+		response := make([]byte, 64)
+		Port().Tx(response)
+		fmt.Printf("blockNum %d\n", i)
+		time.Sleep(10 * time.Millisecond)
+	}
 	return cswStatusPass
 }
