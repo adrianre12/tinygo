@@ -1,7 +1,6 @@
 package msc
 
 import (
-	"fmt"
 	"machine"
 	"machine/usb"
 	"machine/usb/descriptor"
@@ -27,10 +26,7 @@ var (
 var mscInstance *msc
 
 type msc struct {
-	buf       *RingBufferMSC
-	rxHandler func([]byte)
-	txHandler func()
-	waitTxc   bool
+	buf *BufferedSendMSC
 }
 
 func init() {
@@ -41,7 +37,7 @@ func init() {
 
 func newMsc() *msc {
 	m := &msc{
-		buf: NewRingBuffer(),
+		buf: NewBufferedSendMSC(),
 	}
 	machine.ConfigureUSBEndpoint(descriptor.MSC,
 		[]usb.EndpointConfig{
@@ -55,7 +51,7 @@ func newMsc() *msc {
 				Index:     usb.MSC_ENDPOINT_IN,
 				IsIn:      true,
 				Type:      usb.ENDPOINT_TYPE_BULK,
-				TxHandler: m.TxHandler,
+				TxHandler: m.buf.TxHandler,
 			},
 		},
 		[]usb.SetupConfig{
@@ -68,61 +64,6 @@ func newMsc() *msc {
 	initStateMachine()
 
 	return m
-}
-
-func Port() *msc {
-	return mscInstance
-}
-
-// SetRxHandler sets the handler function for incoming messages.
-func (m *msc) SetRxHandler(rxHandler func([]byte)) {
-	m.rxHandler = rxHandler
-}
-
-// SetTxHandler sets the handler function for outgoing messages.
-func (m *msc) SetTxHandler(txHandler func()) {
-	m.txHandler = txHandler
-}
-
-// sendUSBPacket sends a MSC Packet.
-func (m *msc) sendUSBPacket(b []byte) {
-	machine.SendUSBInPacket(usb.MSC_ENDPOINT_IN, b)
-}
-
-// BulkIn
-func (m *msc) TxHandler() {
-	if m.txHandler != nil {
-		m.txHandler()
-	}
-
-	m.waitTxc = false
-	if b, ok := m.buf.Get(); ok {
-		m.waitTxc = true
-		m.sendUSBPacket(b)
-	}
-}
-
-func (m *msc) Tx(b []byte) {
-	if machine.USBDev.InitEndpointComplete {
-		if m.waitTxc {
-			fmt.Println("Putting packet")
-
-			m.buf.Put(b)
-			fmt.Printf("Used %d\n", m.buf.Used())
-		} else {
-			m.waitTxc = true
-			m.sendUSBPacket(b)
-			fmt.Println("Sent packet")
-		}
-	}
-}
-
-// from BulkOut
-func (m *msc) RxHandler(b []byte) {
-	recvChan <- b
-	if m.rxHandler != nil {
-		m.rxHandler(b)
-	}
 }
 
 func mscSetup(setup usb.Setup) bool {
@@ -142,4 +83,26 @@ func mscSetup(setup usb.Setup) bool {
 	}
 
 	return false
+}
+
+func Port() *msc {
+	return mscInstance
+}
+
+func (m *msc) Clear() {
+	m.buf.Clear()
+}
+
+func (m *msc) Tx(b []byte) {
+	if machine.USBDev.InitEndpointComplete {
+
+		//split to packets
+		m.buf.SendUSBPacket(b)
+
+	}
+}
+
+// from BulkOut
+func (m *msc) RxHandler(b []byte) {
+	recvChan <- b
 }
