@@ -23,9 +23,9 @@ var (
 	BlockSize        uint32 = 0x00000200
 )
 
-var mscInstance *msc
+var mscInstance *Msc
 
-type msc struct {
+type Msc struct {
 	buf *BufferedSendMSC
 }
 
@@ -35,8 +35,8 @@ func init() {
 	}
 }
 
-func newMsc() *msc {
-	m := &msc{
+func newMsc() *Msc {
+	m := &Msc{
 		buf: NewBufferedSendMSC(),
 	}
 	machine.ConfigureUSBEndpoint(descriptor.MSC,
@@ -56,7 +56,7 @@ func newMsc() *msc {
 		},
 		[]usb.SetupConfig{
 			{
-				Index:   2,
+				Index:   usb.MSC_INTERFACE,
 				Handler: mscSetup,
 			},
 		})
@@ -85,24 +85,22 @@ func mscSetup(setup usb.Setup) bool {
 	return false
 }
 
-func Port() *msc {
+func Port() *Msc {
 	return mscInstance
 }
 
-func (m *msc) Clear() {
+func (m *Msc) Clear() {
 	m.buf.Clear()
 }
 
-func (m *msc) Tx(b []byte) {
-	if machine.USBDev.InitEndpointComplete {
-
-		//split to packets
-		m.buf.SendUSBPacket(b)
-
-	}
+func (m *Msc) Tx(b []byte) {
+	m.buf.SendUSB(b)
 }
 
 // from BulkOut
-func (m *msc) RxHandler(b []byte) {
-	recvChan <- b
+func (m *Msc) RxHandler(b []byte) {
+	select {
+	case recvChan <- b:
+	default:
+	}
 }

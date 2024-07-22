@@ -60,11 +60,12 @@ const (
 	CONFIG_REMOTE_WAKEUP = 0x20
 
 	// Interface
-	NumberOfInterfaces = 3
+	NumberOfInterfaces = 4
 	CDC_ACM_INTERFACE  = 0 // CDC ACM
 	CDC_DATA_INTERFACE = 1 // CDC Data
 	CDC_FIRST_ENDPOINT = 1
 	HID_INTERFACE      = 2 // HID
+	MSC_INTERFACE      = 3
 
 	// Endpoint
 	CONTROL_ENDPOINT  = 0

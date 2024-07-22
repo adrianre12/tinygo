@@ -60,11 +60,16 @@ func botSM(buf []byte) {
 			CBWCB:                  buf[15:31],
 		}
 		scsiCommands(cbw)
+
 	case StateSend:
+		fmt.Println("Error: StateSend")
 
 	case StateRecv:
+		fmt.Println("Error: StateRecv")
 
 	case StateStatus:
+		fmt.Println("Error: StateStatus")
+
 	}
 }
 
@@ -331,10 +336,10 @@ func cmdRead10(cb []byte) uint8 {
 	transLen := binary.BigEndian.Uint16(cb[7:])
 	//control := b[9]
 	fmt.Printf("lba=%d translen=%d\n", lba, transLen)
-	for i := range transLen * 8 {
-		response := make([]byte, 64)
-		Port().Tx(response)
+	for i := range transLen {
 		fmt.Printf("blockNum %d\n", i)
+		response := make([]byte, BlockSize)
+		Port().Tx(response)
 		time.Sleep(10 * time.Millisecond)
 	}
 	return cswStatusPass
